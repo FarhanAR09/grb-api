@@ -1,21 +1,35 @@
+require('dotenv').config()
+
 const express = require("express")
 const app = express()
 
 const Pool = require('pg').Pool
 const pool = new Pool({
-  user: 'client',
+  user: process.env.DB_USER,
   host: 'localhost',
   database: 'GRB',
-  password: 'inipasswordwkwk',
+  password: process.env.DB_PASSWORD,
   port: 5432,
 })
 
 app.use(express.json());
 
-app.get('/data', async (req, res) => {
+app.get('/customer', async (req, res) => {
     try {
       const client = await pool.connect();
       const result = await client.query('SELECT username FROM Customer');
+      res.json(result.rows);
+      client.release();
+    } catch (err) {
+      console.error('Error executing query', err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.get('/customer::username', async (req, res) => {
+    try {
+      const client = await pool.connect();
+      const result = await client.query("SELECT password FROM Customer WHERE username = " + "'" + req.params[":username"] + "';" );
       res.json(result.rows);
       client.release();
     } catch (err) {
