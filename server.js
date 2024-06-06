@@ -135,20 +135,25 @@ app.post('/purchase',
         [purchaseNumber, username, new Date(Date.now()).toISOString(), storageCode, addressID]
       );
 
-      for (const book in books) {
-        await client.query(
-          'INSERT INTO "PurchaseItem" ("purchaseNumber", "bookNumber", quantity)' +
-          "VALUES ($1, $2, $3)",
-          [purchaseNumber, book.bookNumber, book.quantity]
-        );
+      if (books.length > 0) {
+        books.forEach (async book => {
+          await client.query(
+            'INSERT INTO "PurchaseItem" ("purchaseNumber", "bookNumber", quantity)' +
+            "VALUES ($1, $2, $3)",
+            [purchaseNumber, book.bookNumber, book.quantity]
+          );
+        })
       }
 
-      for (const promo in promos) {
-        await client.query(
-          'INSERT INTO "PromoUsage" ("promoCode", "purchaseNumber")' +
-          "VALUES ($1, $2)",
-          [promo.promoCode, purchaseNumber]
-        );
+
+      if (promos.length > 0) {
+        promos.forEach(async promo => {
+          await client.query(
+            'INSERT INTO "PromoUsage" ("promoCode", "purchaseNumber")' +
+            "VALUES ($1, $2)",
+            [promo.promoCode, purchaseNumber]
+          );
+        });
       }
 
       await client.query("COMMIT;");
