@@ -84,6 +84,50 @@ app.get('/loginAccount',
   }
 );
 
+app.patch(
+  '/updateAccount',
+  [
+    body('username').isString().withMessage('Invalid username data type'),
+    body('oldPassword').isString().withMessage('Invalid old password data type'),
+    body('newPassword').isString().withMessage('Invalid new password data type'),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() }).end();
+    }
+    const {username, oldPassword, newPassword} = req.body;
+    let client;
+    try{
+      client = await pool.connect();
+      await client.query("BEGIN;");
+
+      const existingUsername = result.rows[0]?.username;
+      if (!existingUsername) {
+        return res.status(404).json({ error: 'Username not found' }).end();
+      }
+
+      const loginAttempt = await client.query('SELECT * FROM Customer WHERE username = $1 AND password = $2 LIMIT 1', [username, oldPassword]);
+      const isAuthorized = loginAttempt.rowCount > 0;
+      if (!isAuthorized) {
+        return res.status(401).json({ error: 'Unauthorized' }).end();
+      }
+
+      await client.query(
+        "UPDATE Customer SET password = $1 WHERE username = $2;",
+        [newPassword, username]
+      );
+      await client.query("COMMIT;");
+      res.status(200).end();
+    }
+    catch (err){
+      await client.query('ROLLBACK');
+      res.json(err);
+      res.status(500).end();
+    }
+  }
+);
+
 app.post('/purchase',
   [
     body('username').isString().withMessage('Invalid username data type'),
