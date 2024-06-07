@@ -170,6 +170,130 @@ app.post('/purchase',
   }
 );
 
+app.get('/bookName/:searchName',
+  async (req, res) => {
+
+    const bookNameLike = req.params.searchName;
+
+    let client;
+    try{
+      client = await pool.connect();
+
+      const result = await client.query(
+        'SELECT' +
+	      '"Book"."bookNumber",' +
+	      '"Book"."bookName",' +
+        '"Book"."price",' +
+        '"Book"."pages",' +
+        '"Book"."publicationYear",' +
+        '"Author"."authorNumber",' +
+        '"Author"."authorName",' +
+        '"Book"."publisherName",' +
+        '"BookTagging"."bookTag",' +
+        '(SELECT SUM("amount") FROM "InventoryItem" WHERE "bookNumber" = "Book"."bookNumber") AS "inStock"' +
+        'FROM' +
+	      '"Book" LEFT JOIN "AuthorWrites" ON "Book"."bookNumber" = "AuthorWrites"."bookNumber"' +
+	      'LEFT JOIN "Author" ON "AuthorWrites"."authorNumber" = "Author"."authorNumber"' +
+	      'LEFT JOIN "BookTagging" ON "Book"."bookNumber" = "BookTagging"."bookNumber"' +
+        'WHERE' +
+	      '"Book"."bookName" ILIKE LOWER($1);',
+        ['%' + bookNameLike + '%']
+      );
+      const books = result.rows;
+      res.status(200).json(books).end();
+    }
+    catch (err){
+      await client.query('ROLLBACK');
+      console.error(err);
+      res.status(500).end();
+    }
+    finally{
+      client.release();
+    }
+  }
+);
+
+app.get('/bookNumber/:bookNumber',
+  async (req, res) => {
+
+    const bookNameSearched = req.params.bookNumber;
+
+    let client;
+    try{
+      client = await pool.connect();
+
+      const result = await client.query(
+        'SELECT' +
+	      '"Book"."bookNumber",' +
+	      '"Book"."bookName",' +
+        '"Book"."price",' +
+        '"Book"."pages",' +
+        '"Book"."publicationYear",' +
+        '"Author"."authorNumber",' +
+        '"Author"."authorName",' +
+        '"Book"."publisherName",' +
+        '"BookTagging"."bookTag",' +
+        '(SELECT SUM("amount") FROM "InventoryItem" WHERE "bookNumber" = "Book"."bookNumber") AS "inStock"' +
+        'FROM' +
+	      '"Book" LEFT JOIN "AuthorWrites" ON "Book"."bookNumber" = "AuthorWrites"."bookNumber"' +
+	      'LEFT JOIN "Author" ON "AuthorWrites"."authorNumber" = "Author"."authorNumber"' +
+	      'LEFT JOIN "BookTagging" ON "Book"."bookNumber" = "BookTagging"."bookNumber"' +
+        'WHERE' +
+	      '"Book"."bookNumber" = $1;',
+        [bookNameSearched]
+      );
+      const books = result.rows;
+      res.status(200).json(books).end();
+    }
+    catch (err){
+      await client.query('ROLLBACK');
+      console.error(err);
+      res.status(500).end();
+    }
+    finally{
+      client.release();
+    }
+  }
+);
+
+app.post('/reviewbook',
+  [
+    body('username').isString().withMessage('Invalid username data type'),
+    body('bookNumber').isInt().withMessage('Invalid bookNumber data type'),
+    body('rating').isInt().withMessage('Invalid rating data type'),
+    body('comment').isString().withMessage('Invalid comment data type'),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() }).end();
+    }
+    const {username, bookNumber, rating, comment} = req.body;
+    let client;
+    try{
+      client = await pool.connect();
+      await client.query("BEGIN;");
+      await client.query(
+        'INSERT INTO "Review" ("username", "bookNumber", "rating", "comment")' +
+        'VALUES ($1, $2, $3, $4);',
+        [username, bookNumber, rating, comment]
+      );
+      await client.query("COMMIT;");
+      res.status(201).end();
+    }
+    catch (err){
+      await client.query('ROLLBACK');
+      res.json(err);
+      res.status(500).end();
+    }
+    finally{
+      client.release();
+    }
+  }
+);
+
+
+
 
 
 
