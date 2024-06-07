@@ -135,20 +135,25 @@ app.post('/purchase',
         [purchaseNumber, username, new Date(Date.now()).toISOString(), storageCode, addressID]
       );
 
-      for (const book in books) {
-        await client.query(
-          'INSERT INTO "PurchaseItem" ("purchaseNumber", "bookNumber", quantity)' +
-          "VALUES ($1, $2, $3)",
-          [purchaseNumber, book.bookNumber, book.quantity]
-        );
+      if (books.length > 0) {
+        books.forEach (async book => {
+          await client.query(
+            'INSERT INTO "PurchaseItem" ("purchaseNumber", "bookNumber", quantity)' +
+            "VALUES ($1, $2, $3)",
+            [purchaseNumber, book.bookNumber, book.quantity]
+          );
+        })
       }
 
-      for (const promo in promos) {
-        await client.query(
-          'INSERT INTO "PromoUsage" ("promoCode", "purchaseNumber")' +
-          "VALUES ($1, $2)",
-          [promo.promoCode, purchaseNumber]
-        );
+
+      if (promos.length > 0) {
+        promos.forEach(async promo => {
+          await client.query(
+            'INSERT INTO "PromoUsage" ("promoCode", "purchaseNumber")' +
+            "VALUES ($1, $2)",
+            [promo.promoCode, purchaseNumber]
+          );
+        });
       }
 
       await client.query("COMMIT;");
@@ -165,50 +170,127 @@ app.post('/purchase',
   }
 );
 
+app.get('/bookName/:searchName',
+  async (req, res) => {
 
+    const bookNameLike = req.params.searchName;
 
+    let client;
+    try{
+      client = await pool.connect();
 
-
-app.get('/getpurchase', async (req, res) => {
-  try {
-    const client = await pool.connect();
-    const result = await client.query('SELECT * FROM "Purchase";');
-    res.json(result.rows);
-    client.release();
-  } catch (err) {
-    console.error('Error executing query', err);
-    res.status(500).json({ error: 'Internal Server Error' });
+      const result = await client.query(
+        'SELECT' +
+	      '"Book"."bookNumber",' +
+	      '"Book"."bookName",' +
+        '"Book"."price",' +
+        '"Book"."pages",' +
+        '"Book"."publicationYear",' +
+        '"Author"."authorNumber",' +
+        '"Author"."authorName",' +
+        '"Book"."publisherName",' +
+        '"BookTagging"."bookTag",' +
+        '(SELECT SUM("amount") FROM "InventoryItem" WHERE "bookNumber" = "Book"."bookNumber") AS "inStock"' +
+        'FROM' +
+	      '"Book" LEFT JOIN "AuthorWrites" ON "Book"."bookNumber" = "AuthorWrites"."bookNumber"' +
+	      'LEFT JOIN "Author" ON "AuthorWrites"."authorNumber" = "Author"."authorNumber"' +
+	      'LEFT JOIN "BookTagging" ON "Book"."bookNumber" = "BookTagging"."bookNumber"' +
+        'WHERE' +
+	      '"Book"."bookName" ILIKE LOWER($1);',
+        ['%' + bookNameLike + '%']
+      );
+      const books = result.rows;
+      res.status(200).json(books).end();
+    }
+    catch (err){
+      await client.query('ROLLBACK');
+      console.error(err);
+      res.status(500).end();
+    }
+    finally{
+      client.release();
+    }
   }
-});
+);
 
-app.get('/customer', async (req, res) => {
-    try {
-      const client = await pool.connect();
-      const result = await client.query('SELECT username FROM Customer');
-      res.json(result.rows);
-      client.release();
-    } catch (err) {
-      console.error('Error executing query', err);
-      res.status(500).json({ error: 'Internal Server Error' });
+app.get('/bookNumber/:bookNumber',
+  async (req, res) => {
+
+    const bookNameSearched = req.params.bookNumber;
+
+    let client;
+    try{
+      client = await pool.connect();
+
+      const result = await client.query(
+        'SELECT' +
+	      '"Book"."bookNumber",' +
+	      '"Book"."bookName",' +
+        '"Book"."price",' +
+        '"Book"."pages",' +
+        '"Book"."publicationYear",' +
+        '"Author"."authorNumber",' +
+        '"Author"."authorName",' +
+        '"Book"."publisherName",' +
+        '"BookTagging"."bookTag",' +
+        '(SELECT SUM("amount") FROM "InventoryItem" WHERE "bookNumber" = "Book"."bookNumber") AS "inStock"' +
+        'FROM' +
+	      '"Book" LEFT JOIN "AuthorWrites" ON "Book"."bookNumber" = "AuthorWrites"."bookNumber"' +
+	      'LEFT JOIN "Author" ON "AuthorWrites"."authorNumber" = "Author"."authorNumber"' +
+	      'LEFT JOIN "BookTagging" ON "Book"."bookNumber" = "BookTagging"."bookNumber"' +
+        'WHERE' +
+	      '"Book"."bookNumber" = $1;',
+        [bookNameSearched]
+      );
+      const books = result.rows;
+      res.status(200).json(books).end();
     }
-});
-
-app.get('/customer::username', async (req, res) => {
-    try {
-      const client = await pool.connect();
-      const result = await client.query("SELECT password FROM Customer WHERE username = " + "'" + req.params[":username"] + "';" );
-      res.json(result.rows);
-      client.release();
-    } catch (err) {
-      console.error('Error executing query', err);
-      res.status(500).json({ error: 'Internal Server Error' });
+    catch (err){
+      await client.query('ROLLBACK');
+      console.error(err);
+      res.status(500).end();
     }
-  });
+    finally{
+      client.release();
+    }
+  }
+);
 
-app.get("/", (req, res) => {
-    console.log("get called")
-    res.send("wow")
-})
+app.post('/reviewbook',
+  [
+    body('username').isString().withMessage('Invalid username data type'),
+    body('bookNumber').isInt().withMessage('Invalid bookNumber data type'),
+    body('rating').isInt().withMessage('Invalid rating data type'),
+    body('comment').isString().withMessage('Invalid comment data type'),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() }).end();
+    }
+    const {username, bookNumber, rating, comment} = req.body;
+    let client;
+    try{
+      client = await pool.connect();
+      await client.query("BEGIN;");
+      await client.query(
+        'INSERT INTO "Review" ("username", "bookNumber", "rating", "comment")' +
+        'VALUES ($1, $2, $3, $4);',
+        [username, bookNumber, rating, comment]
+      );
+      await client.query("COMMIT;");
+      res.status(201).end();
+    }
+    catch (err){
+      await client.query('ROLLBACK');
+      res.json(err);
+      res.status(500).end();
+    }
+    finally{
+      client.release();
+    }
+  }
+);
 
 app.listen(3000, (err) => {
     if (err) console.log("Error: server setup failed")
